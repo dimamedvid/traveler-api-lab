@@ -205,6 +205,13 @@ async function updateLocation(req, res) {
 
   try {
     const { id } = req.params;
+    const { version } = req.body;
+
+    if (!Number.isInteger(version) || version <= 0) {
+      return res.status(400).json({
+        error: "Validation error: Version must be a positive integer"
+      });
+    }
 
     await client.query("BEGIN");
 
@@ -227,6 +234,15 @@ async function updateLocation(req, res) {
     }
 
     const existing = existingResult.rows[0];
+
+    if (existing.version !== version) {
+      await client.query("ROLLBACK");
+
+      return res.status(409).json({
+        error: "Conflict: location was modified by another request",
+        current_version: existing.version
+      });
+    }
 
     const updatedData = {
       name:
@@ -297,8 +313,10 @@ async function updateLocation(req, res) {
         arrival_date = $5,
         departure_date = $6,
         budget = $7,
-        notes = $8
+        notes = $8,
+        version = version + 1
       WHERE id = $9
+        AND version = $10
       RETURNING *;
       `,
       [
@@ -310,9 +328,18 @@ async function updateLocation(req, res) {
         updatedData.departure_date,
         updatedData.budget,
         updatedData.notes,
-        id
+        id,
+        version
       ]
     );
+
+    if (result.rows.length === 0) {
+      await client.query("ROLLBACK");
+
+      return res.status(409).json({
+        error: "Conflict: location was modified by another request"
+      });
+    }
 
     await client.query("COMMIT");
 

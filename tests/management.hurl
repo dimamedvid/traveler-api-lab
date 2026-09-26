@@ -27,8 +27,10 @@ Content-Type: application/json
 HTTP 201
 [Captures]
 location1_id: jsonpath "$.id"
+location1_version: jsonpath "$.version"
 
 [Asserts]
+jsonpath "$.version" == 1
 jsonpath "$.name" == "Eiffel Tower"
 jsonpath "$.visit_order" == 1
 jsonpath "$.travel_plan_id" == "{{location_plan_id}}"
@@ -84,14 +86,33 @@ Content-Type: application/json
 {
   "name": "Eiffel Tower (Night Visit)",
   "budget": 30.00,
-  "notes": "Amazing night illumination"
+  "notes": "Amazing night illumination",
+  "version": {{location1_version}}
 }
 
 HTTP 200
+[Captures]
+updated_location_version: jsonpath "$.version"
+
 [Asserts]
 jsonpath "$.name" == "Eiffel Tower (Night Visit)"
 jsonpath "$.budget" == 30.00
 jsonpath "$.notes" == "Amazing night illumination"
+jsonpath "$.version" == 2
+
+
+# Test 5.1: Optimistic locking conflict for location
+PUT {{host}}/api/locations/{{location1_id}}
+Content-Type: application/json
+{
+  "name": "This update must fail",
+  "version": {{location1_version}}
+}
+
+HTTP 409
+[Asserts]
+jsonpath "$.error" contains "Conflict"
+jsonpath "$.current_version" == 2
 
 # Test 6: Delete location
 DELETE {{host}}/api/locations/{{location2_id}}
