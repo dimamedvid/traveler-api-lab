@@ -25,11 +25,17 @@ function makeRequest(method, url, body = null, expectedStatuses = [200], operati
 
   const statuses = Array.isArray(expectedStatuses) ? expectedStatuses : [expectedStatuses];
 
+  const normalizedPath = url.replace(
+    /\/[0-9a-f-]{36}/g,
+    '/:id'
+  );
+
   const params = {
     headers: DEFAULT_HEADERS,
     tags: {
+      name: normalizedPath,
       type: operationType,
-      endpoint: url.replace(/\/[0-9a-f-]{36}/g, '/:id'),
+      endpoint: normalizedPath,
     },
     responseCallback: http.expectedStatuses(...statuses),
   };
@@ -213,33 +219,53 @@ export function verifyPlanDeleted(planId) {
  * @param {object} updateData - Дані для оновлення (повинні містити version)
  * @returns {object} Оновлений план або null
  */
-export function updateTravelPlan(planId, updateData) {
+export function updateTravelPlan(
+  planId,
+  updateData,
+  expectConflict = false
+) {
   const response = makeRequest(
     'PUT',
     ENDPOINTS.TRAVEL_PLAN_BY_ID(planId),
     updateData,
-    [200, 409],
+    expectConflict ? 409 : 200,
     'write'
   );
 
-  check(response, {
-    'plan updated successfully': (r) => r.status === 200,
-    'version incremented': (r) => {
-      if (r.status !== 200) return false;
-      const body = JSON.parse(r.body);
-      return body.version === updateData.version + 1;
-    },
-  });
+  if (expectConflict) {
+    check(response, {
+      'stale update rejected with 409': (r) =>
+        r.status === 409,
+    });
+  } else {
+    check(response, {
+      'plan updated successfully': (r) =>
+        r.status === 200,
+
+      'version incremented': (r) => {
+        if (r.status !== 200) return false;
+
+        try {
+          const body = JSON.parse(r.body);
+          return body.version === updateData.version + 1;
+        } catch (e) {
+          return false;
+        }
+      },
+    });
+  }
 
   if (response.status === 200) {
     return JSON.parse(response.body);
   }
-  
-  // Якщо 409 - це конфлікт версій (очікувана поведінка в race condition тестах)
+
   if (response.status === 409) {
-    return { conflict: true, body: JSON.parse(response.body) };
+    return {
+      conflict: true,
+      body: JSON.parse(response.body),
+    };
   }
-  
+
   return null;
 }
 
