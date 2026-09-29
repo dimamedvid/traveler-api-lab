@@ -1,3 +1,4 @@
+
 const pool = require("../db/database");
 
 function formatLocation(location) {
@@ -201,8 +202,6 @@ async function createLocation(req, res) {
 }
 
 async function updateLocation(req, res) {
-  const client = await pool.connect();
-
   try {
     const { id } = req.params;
     const { version } = req.body;
@@ -213,36 +212,18 @@ async function updateLocation(req, res) {
       });
     }
 
-    await client.query("BEGIN");
-
-    const existingResult = await client.query(
-      `
-      SELECT *
-      FROM locations
-      WHERE id = $1
-      FOR UPDATE;
-      `,
+    const existingResult = await pool.query(
+      `SELECT * FROM locations WHERE id = $1;`,
       [id]
     );
 
     if (existingResult.rows.length === 0) {
-      await client.query("ROLLBACK");
-
       return res.status(404).json({
         error: "Location not found"
       });
     }
 
     const existing = existingResult.rows[0];
-
-    if (existing.version !== version) {
-      await client.query("ROLLBACK");
-
-      return res.status(409).json({
-        error: "Conflict: location was modified by another request",
-        current_version: existing.version
-      });
-    }
 
     const updatedData = {
       name:
@@ -295,14 +276,12 @@ async function updateLocation(req, res) {
     const validationError = validateLocation(updatedData);
 
     if (validationError) {
-      await client.query("ROLLBACK");
-
       return res.status(400).json({
         error: `Validation error: ${validationError}`
       });
     }
 
-    const result = await client.query(
+    const result = await pool.query(
       `
       UPDATE locations
       SET
@@ -334,29 +313,33 @@ async function updateLocation(req, res) {
     );
 
     if (result.rows.length === 0) {
-      await client.query("ROLLBACK");
+      const currentResult = await pool.query(
+        `SELECT version FROM locations WHERE id = $1;`,
+        [id]
+      );
+
+      if (currentResult.rows.length === 0) {
+        return res.status(404).json({
+          error: "Location not found"
+        });
+      }
 
       return res.status(409).json({
-        error: "Conflict: location was modified by another request"
+        error: "Conflict: location was modified by another request",
+        current_version: currentResult.rows[0].version
       });
     }
-
-    await client.query("COMMIT");
 
     return res
       .status(200)
       .json(formatLocation(result.rows[0]));
 
   } catch (error) {
-    await client.query("ROLLBACK");
-
     console.error("Update location error:", error);
 
     return res.status(500).json({
       error: "Internal server error"
     });
-  } finally {
-    client.release();
   }
 }
 

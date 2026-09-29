@@ -1,3 +1,4 @@
+
 const pool = require("../db/database");
 
 function formatTravelPlan(plan) {
@@ -149,6 +150,7 @@ async function createTravelPlan(req, res) {
     return res
       .status(201)
       .json(formatTravelPlan(result.rows[0]));
+
   } catch (error) {
     console.error("Create travel plan error:", error);
 
@@ -159,10 +161,20 @@ async function createTravelPlan(req, res) {
 }
 
 async function getTravelPlan(req, res) {
+  let client;
+  let inTransaction = false;
+
   try {
     const { id } = req.params;
 
-    const planResult = await pool.query(
+    client = await pool.connect();
+
+    await client.query(
+      "BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY"
+    );
+    inTransaction = true;
+
+    const planResult = await client.query(
       `
       SELECT *
       FROM travel_plans
@@ -172,12 +184,15 @@ async function getTravelPlan(req, res) {
     );
 
     if (planResult.rows.length === 0) {
+      await client.query("ROLLBACK");
+      inTransaction = false;
+
       return res.status(404).json({
         error: "Travel plan not found"
       });
     }
 
-    const locationsResult = await pool.query(
+    const locationsResult = await client.query(
       `
       SELECT *
       FROM locations
@@ -187,10 +202,14 @@ async function getTravelPlan(req, res) {
       [id]
     );
 
+    await client.query("COMMIT");
+    inTransaction = false;
+
     const plan = formatTravelPlan(planResult.rows[0]);
 
     plan.locations = locationsResult.rows.map((location) => ({
       ...location,
+
       latitude:
         location.latitude !== null
           ? Number(location.latitude)
@@ -210,11 +229,27 @@ async function getTravelPlan(req, res) {
     return res.status(200).json(plan);
 
   } catch (error) {
+    if (client && inTransaction) {
+      try {
+        await client.query("ROLLBACK");
+      } catch (rollbackError) {
+        console.error(
+          "Get travel plan rollback error:",
+          rollbackError
+        );
+      }
+    }
+
     console.error("Get travel plan error:", error);
 
     return res.status(500).json({
       error: "Internal server error"
     });
+
+  } finally {
+    if (client) {
+      client.release();
+    }
   }
 }
 
@@ -231,6 +266,7 @@ async function getTravelPlans(req, res) {
     const plans = result.rows.map(formatTravelPlan);
 
     return res.status(200).json(plans);
+
   } catch (error) {
     console.error("Get travel plans error:", error);
 
@@ -430,6 +466,7 @@ async function deleteTravelPlan(req, res) {
     }
 
     return res.status(204).send();
+
   } catch (error) {
     console.error("Delete travel plan error:", error);
 
