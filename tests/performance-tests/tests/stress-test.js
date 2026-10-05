@@ -52,17 +52,17 @@ import {
 export const options = {
   // Профіль навантаження: поступове зростання → стабільний стан → зменшення
   stages: [
-    { duration: '1m', target: 50 },
-    { duration: '1m', target: 50 },
-
     { duration: '1m', target: 100 },
     { duration: '1m', target: 100 },
 
-    { duration: '1m', target: 150 },
-    { duration: '1m', target: 150 },
+    { duration: '1m', target: 200 },
+    { duration: '1m', target: 200 },
 
-    { duration: '1m', target: 200 },
-    { duration: '1m', target: 200 },
+    { duration: '1m', target: 400 },
+    { duration: '1m', target: 400 },
+
+    { duration: '1m', target: 600 },
+    { duration: '1m', target: 600 },
 
     { duration: '2m', target: 0 },
   ],
